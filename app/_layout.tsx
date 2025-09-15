@@ -1,39 +1,62 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
-import 'react-native-reanimated';
+import { Stack, Redirect, useRouter } from 'expo-router';
+import { createContext, useEffect, useState } from 'react';
+import { checkForDeadHabits, getHabits } from './data/habits';
 
-import { useColorScheme } from '@/hooks/useColorScheme';
+export const HabitContext = createContext<{
+  habits: any[];
+  setHabits: React.Dispatch<React.SetStateAction<any[]>>;
+}>({ habits: [], setHabits: () => null });
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
-SplashScreen.preventAutoHideAsync();
-
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
+export default function Layout() {
+  const [habits, setHabits] = useState<any[]>([]);
+  const router = useRouter();
 
   useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded]);
+    async function initializeHabits() {
+      const loadedHabits = await getHabits();
+      setHabits(loadedHabits);
 
-  if (!loaded) {
-    return null;
-  }
+      // Check for dead habits on app start
+      await checkForDeadHabits();
+
+      // Redirect to add-habit-screen if no habits exist
+      if (loadedHabits.length === 0) {
+        router.replace('./screens/AddHabitScreen.tsx?fromInitialLoad=true');
+      }
+    }
+
+    initializeHabits();
+
+    // Set up a timer to check for dead habits every hour
+    const interval = setInterval(async () => {
+      await checkForDeadHabits();
+      const updatedHabits = await getHabits();
+      setHabits(updatedHabits);
+    }, 60 * 60 * 1000); // Every hour
+
+    return () => clearInterval(interval); // Cleanup on unmount
+  }, [router]);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
+    <HabitContext.Provider value={{ habits, setHabits }}>
+      <Stack
+        screenOptions={{
+          headerStyle: {
+            backgroundColor: '#f0f8ff',
+          },
+          headerTintColor: '#ff4500',
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+        }}
+      >
+        <Stack.Screen name="index" options={{ title: 'Home' }} />
+        <Stack.Screen name="screens/AddHabitScreen" options={{ title: 'Add New Pet' }} />
+        <Stack.Screen name="screens/HabitsGalleryScreen" options={{ title: 'Pet Gallery' }} />
+        <Stack.Screen name="screens/CreatureDetailsScreen" options={{ title: 'Pet Details' }} />
+        <Stack.Screen name="screens/GraveyardScreen" options={{ title: 'Graveyard' }} />
+        <Stack.Screen name="screens/DeadCreatureScreen" options={{ title: 'Fallen Pet Details' }} />
       </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    </HabitContext.Provider>
   );
-}
+};
